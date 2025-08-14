@@ -1,5 +1,6 @@
 ﻿using Connectly.Application.Follower;
 using Connectly.Application.Identity;
+
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 

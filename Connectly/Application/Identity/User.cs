@@ -8,10 +8,13 @@ public class User
         ExternalId = externalId;
         Id = Guid.NewGuid();
     }
-    
-    public Guid Id { get; private set; }
+
+    public Guid Id { get; }
     public string Username { get; set; }
     public string ExternalId { get; private set; }
-    
-    public FilteredUser ToFilteredUser() => new(Id, Username);
+
+    public FilteredUser ToFilteredUser()
+    {
+        return new FilteredUser(Id, Username);
+    }
 }

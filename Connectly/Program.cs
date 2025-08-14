@@ -1,9 +1,10 @@
-using System.Reflection.Metadata;
 using System.Security.Claims;
+
 using Connectly.Application.Follower;
 using Connectly.Application.Identity;
 using Connectly.Authorization;
 using Connectly.Infrastructure.Data;
+
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
-var builder = WebApplication.CreateBuilder(args);
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<ConnectlyDbContext>();
 
@@ -24,7 +25,7 @@ builder.Services.AddOpenApi(options =>
         doc.Info.Description = "A rewrite of the Connectly API in ASP.NET Core";
 
         doc.Components ??= new OpenApiComponents();
-        doc.Components.SecuritySchemes = new Dictionary<string, OpenApiSecurityScheme>()
+        doc.Components.SecuritySchemes = new Dictionary<string, OpenApiSecurityScheme>
         {
             ["Bearer"] = new()
             {
@@ -33,17 +34,14 @@ builder.Services.AddOpenApi(options =>
                 Scheme = "bearer",
                 BearerFormat = "JWT",
                 Description = "JWT Token from Auth0",
-                Flows = new OpenApiOAuthFlows()
+                Flows = new OpenApiOAuthFlows
                 {
-                    Implicit = new OpenApiOAuthFlow()
+                    Implicit = new OpenApiOAuthFlow
                     {
                         AuthorizationUrl =
                             new Uri("https://ewan.au.auth0.com/authorize?audience=https://connectly-noobnoob"),
                         TokenUrl = new Uri("https://ewan.au.auth0.com/oauth/token"),
-                        Scopes = new Dictionary<string, string>()
-                        {
-                            ["openid"] = "OpenID",
-                        }
+                        Scopes = new Dictionary<string, string> { ["openid"] = "OpenID" }
                     }
                 }
             }
@@ -52,20 +50,17 @@ builder.Services.AddOpenApi(options =>
 
     options.AddOperationTransformer(async (op, ctx, ct) =>
     {
-        var hasAuthorizeAttribute =
+        bool hasAuthorizeAttribute =
             ctx.Description.ActionDescriptor.EndpointMetadata.OfType<AuthorizeAttribute>().Any();
         if (hasAuthorizeAttribute)
         {
             op.Security ??= new List<OpenApiSecurityRequirement>();
-            op.Security.Add(new OpenApiSecurityRequirement()
+            op.Security.Add(new OpenApiSecurityRequirement
             {
                 {
-                    new OpenApiSecurityScheme()
+                    new OpenApiSecurityScheme
                     {
-                        Reference = new OpenApiReference()
-                        {
-                            Type = ReferenceType.SecurityScheme, Id = "Bearer"
-                        }
+                        Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
                     },
                     ["openid"]
                 }
@@ -75,9 +70,11 @@ builder.Services.AddOpenApi(options =>
 
     options.AddOperationTransformer(async (op, ctx, ct) =>
     {
-        var displayName = ctx.Description.ActionDescriptor.DisplayName;
+        string? displayName = ctx.Description.ActionDescriptor.DisplayName;
         if (string.IsNullOrEmpty(displayName))
+        {
             return;
+        }
 
         op.Summary = displayName;
     });
@@ -92,21 +89,18 @@ builder.Services.AddAuthentication(options =>
     {
         options.Authority = "https://ewan.au.auth0.com";
         options.Audience = "https://connectly-noobnoob";
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            NameClaimType = ClaimTypes.NameIdentifier
-        };
+        options.TokenValidationParameters = new TokenValidationParameters { NameClaimType = ClaimTypes.NameIdentifier };
     });
 
 builder.Services.AddConnectlyAuthorization();
 
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 
 // The app mainly uses sqlite
-using (var scope = app.Services.CreateScope())
+using (IServiceScope scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<ConnectlyDbContext>();
+    ConnectlyDbContext db = scope.ServiceProvider.GetRequiredService<ConnectlyDbContext>();
     db.Database.Migrate();
 }
 
@@ -123,7 +117,7 @@ app.UseAuthorization();
 
 app.UseHttpsRedirection();
 
-var users = app.MapGroup("/api/users").WithTags("Users");
+RouteGroupBuilder users = app.MapGroup("/api/users").WithTags("Users");
 
 users.MapGet("/", (ConnectlyDbContext db) => db.Users.AsNoTracking().ToList().Select(x => x.ToFilteredUser()))
     .WithDisplayName("GetUsers")
@@ -135,7 +129,7 @@ users.MapGet("/{id:guid}", (ConnectlyDbContext db, Guid id) => db.Users.AsNoTrac
     .RequireAuthorization();
 users.MapGet("/profile", async ([FromServices] IExternalIdentityService identity, CancellationToken ct) =>
     {
-        var user = await identity.GetUserAsync(ct);
+        User? user = await identity.GetUserAsync(ct);
         return user?.ToFilteredUser();
     })
     .WithDisplayName("GetProfile")
@@ -145,28 +139,30 @@ users.MapPost("/",
         async ([FromBody] NewUser newUser, [FromServices] ConnectlyDbContext db,
             [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
         {
-            var isUsernameTaken = await db.Users.AsNoTracking()
-                .AnyAsync(x => x.Username == newUser.Username, cancellationToken: ct);
-            var isExternalIdTaken = await db.Users.AsNoTracking()
-                .AnyAsync(x => x.ExternalId == identity.GetExternalUserId(), cancellationToken: ct);
+            bool isUsernameTaken = await db.Users.AsNoTracking()
+                .AnyAsync(x => x.Username == newUser.Username, ct);
+            bool isExternalIdTaken = await db.Users.AsNoTracking()
+                .AnyAsync(x => x.ExternalId == identity.GetExternalUserId(), ct);
             if (isUsernameTaken || isExternalIdTaken)
+            {
                 return Results.BadRequest();
+            }
 
-            var user = new User(newUser.Username, identity.GetExternalUserId());
-            await db.Users.AddAsync(user, cancellationToken: ct);
-            await db.SaveChangesAsync(cancellationToken: ct);
+            User user = new(newUser.Username, identity.GetExternalUserId());
+            await db.Users.AddAsync(user, ct);
+            await db.SaveChangesAsync(ct);
             return Results.Created($"/api/users/{user.Id}", user.ToFilteredUser());
         })
     .WithDisplayName("CreateUser")
     .WithDescription("Creates a new user")
     .RequireAuthorization(nameof(NoopAuthorizationRequirement));
 
-var followers = app.MapGroup("/api/followers").WithTags("Followers").RequireAuthorization();
+RouteGroupBuilder followers = app.MapGroup("/api/followers").WithTags("Followers").RequireAuthorization();
 followers.MapGet("/",
         async ([FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
             CancellationToken ct) =>
         {
-            var user = await identity.GetUserAsync(ct);
+            User? user = await identity.GetUserAsync(ct);
             return await db.Followers
                 .AsNoTracking()
                 .Where(x => x.UserId == user.Id)
@@ -182,7 +178,6 @@ followers.MapGet("/",
 followers.MapPost("/{id:guid}",
     async () =>
     {
-        
     });
 
 app.Run();

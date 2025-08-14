@@ -1,5 +1,6 @@
 ﻿using Connectly.Application.Follower;
 using Connectly.Application.Identity;
+
 using Microsoft.EntityFrameworkCore;
 
 namespace Connectly.Infrastructure.Data;
@@ -14,7 +15,7 @@ public class ConnectlyDbContext : DbContext
         base.OnConfiguring(optionsBuilder);
         optionsBuilder.UseSqlite("Data Source=connectly.db");
     }
-    
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

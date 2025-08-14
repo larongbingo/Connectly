@@ -8,9 +8,9 @@ public static class ConnectlyAuthorizationModule
     {
         services.AddAuthorization(options =>
         {
-            options.AddPolicy(nameof(ConnectlyAuthorizationRequirement), 
+            options.AddPolicy(nameof(ConnectlyAuthorizationRequirement),
                 policy => policy.Requirements.Add(new ConnectlyAuthorizationRequirement()));
-            options.AddPolicy(nameof(NoopAuthorizationRequirement), 
+            options.AddPolicy(nameof(NoopAuthorizationRequirement),
                 policy => policy.Requirements.Add(new NoopAuthorizationRequirement()));
             options.DefaultPolicy = options.GetPolicy(nameof(ConnectlyAuthorizationRequirement));
         });

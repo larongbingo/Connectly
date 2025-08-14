@@ -8,7 +8,7 @@ public class Follower
         FollowerId = followerId;
         Id = Guid.NewGuid();
     }
-    
+
     public Guid Id { get; private set; }
     public Guid UserId { get; private set; }
     public Guid FollowerId { get; private set; }
