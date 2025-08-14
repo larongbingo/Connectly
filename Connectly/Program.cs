@@ -214,6 +214,8 @@ followers.MapDelete("/{userId:guid}",
         db.Followers.Remove(follower);
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
-    });
+    })
+    .WithDisplayName("UnfollowUser")
+    .WithDescription("Unfollows a user");
 
 app.Run();
