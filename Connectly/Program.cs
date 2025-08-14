@@ -175,9 +175,45 @@ followers.MapGet("/",
         })
     .WithDisplayName("GetFollowers")
     .WithDescription("Gets the current user's followers");
-followers.MapPost("/{id:guid}",
-    async () =>
+followers.MapPost("/{userId:guid}",
+    async (Guid userId, [FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
+        CancellationToken ct) =>
     {
+        var user = await identity.GetUserAsync(ct);
+        var isUserToFollowExists = await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId, ct);
+        if (!isUserToFollowExists)
+            return Results.NotFound();
+
+        var isAlreadyFollowing =
+            await db.Followers.AsNoTracking().AnyAsync(x => x.UserId == user.Id && x.FollowerId == userId, ct);
+        if (isAlreadyFollowing)
+            return Results.BadRequest();
+        
+        var follower = new Follower(user.Id, userId);
+        await db.Followers.AddAsync(follower, ct);
+        await db.SaveChangesAsync(ct);
+        return Results.Created("/api/followers", follower.Id);
+    })
+    .WithDisplayName("FollowUser")
+    .WithDescription("Follows a user");
+followers.MapDelete("/{userId:guid}", 
+    async (Guid userId, [FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
+        CancellationToken ct) =>
+    {
+        var user = await identity.GetUserAsync(ct);
+        var isUserToUnfollowExists = await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId, ct);
+        if (!isUserToUnfollowExists)
+            return Results.NotFound();
+
+        var isAlreadyFollowing =
+            await db.Followers.AsNoTracking().AnyAsync(x => x.UserId == user.Id && x.FollowerId == userId, ct);
+        if (!isAlreadyFollowing)
+            return Results.BadRequest();
+        
+        var follower = new Follower(user.Id, userId);
+        db.Followers.Remove(follower);
+        await db.SaveChangesAsync(ct);
+        return Results.NoContent();
     });
 
 app.Run();
