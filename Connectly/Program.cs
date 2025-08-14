@@ -270,5 +270,22 @@ posts.MapPost("/",
         })
     .WithDisplayName("CreatePost")
     .WithDescription("Create a new post");
+posts.MapDelete("/{postId:guid}",
+        async (Guid postId, [FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
+            CancellationToken ct) =>
+        {
+            var user = await identity.GetUserAsync(ct);
+            var post = await db.Posts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == postId, ct);
+            if (post is null)
+                return Results.NotFound();
+            if (post.UserId != user.Id)
+                return Results.BadRequest();
+
+            db.Posts.Remove(post);
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        })
+    .WithDisplayName("DeletePost")
+    .WithDescription("Delete a post");
 
 app.Run();
