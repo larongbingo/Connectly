@@ -170,7 +170,7 @@ followers.MapGet("/",
                     db.Users,
                     f => f.FollowerId,
                     u => u.Id,
-                    (f, u) => new DetailedFollower(f.UserId, f.FollowerId, u.Username))
+                    (f, u) => new DetailedFollower(f.FollowerId, u.Username))
                 .ToListAsync(ct);
         })
     .WithDisplayName("GetFollowers")
