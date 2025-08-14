@@ -1,5 +1,6 @@
 using System.Reflection.Metadata;
 using System.Security.Claims;
+using Connectly.Application.Follower;
 using Connectly.Application.Identity;
 using Connectly.Authorization;
 using Connectly.Infrastructure.Data;
@@ -36,7 +37,8 @@ builder.Services.AddOpenApi(options =>
                 {
                     Implicit = new OpenApiOAuthFlow()
                     {
-                        AuthorizationUrl = new Uri("https://ewan.au.auth0.com/authorize?audience=https://connectly-noobnoob"),
+                        AuthorizationUrl =
+                            new Uri("https://ewan.au.auth0.com/authorize?audience=https://connectly-noobnoob"),
                         TokenUrl = new Uri("https://ewan.au.auth0.com/oauth/token"),
                         Scopes = new Dictionary<string, string>()
                         {
@@ -47,10 +49,11 @@ builder.Services.AddOpenApi(options =>
             }
         };
     });
-    
+
     options.AddOperationTransformer(async (op, ctx, ct) =>
     {
-        var hasAuthorizeAttribute = ctx.Description.ActionDescriptor.EndpointMetadata.OfType<AuthorizeAttribute>().Any();
+        var hasAuthorizeAttribute =
+            ctx.Description.ActionDescriptor.EndpointMetadata.OfType<AuthorizeAttribute>().Any();
         if (hasAuthorizeAttribute)
         {
             op.Security ??= new List<OpenApiSecurityRequirement>();
@@ -63,19 +66,19 @@ builder.Services.AddOpenApi(options =>
                         {
                             Type = ReferenceType.SecurityScheme, Id = "Bearer"
                         }
-                    }, 
-                    ["openapi"]
+                    },
+                    ["openid"]
                 }
             });
         }
     });
-    
+
     options.AddOperationTransformer(async (op, ctx, ct) =>
     {
         var displayName = ctx.Description.ActionDescriptor.DisplayName;
         if (string.IsNullOrEmpty(displayName))
             return;
-                
+
         op.Summary = displayName;
     });
 });
@@ -94,6 +97,7 @@ builder.Services.AddAuthentication(options =>
             NameClaimType = ClaimTypes.NameIdentifier
         };
     });
+
 builder.Services.AddConnectlyAuthorization();
 
 
@@ -121,30 +125,64 @@ app.UseHttpsRedirection();
 
 var users = app.MapGroup("/api/users").WithTags("Users");
 
-users.MapGet("/", (ConnectlyDbContext db) => db.Users.AsNoTracking().ToList().Select(x => x.ToFilteredUser())).RequireAuthorization();
-users.MapGet("/{id:guid}", (ConnectlyDbContext db, Guid id) => db.Users.AsNoTracking().FirstOrDefault(x => x.Id == id)).RequireAuthorization();
+users.MapGet("/", (ConnectlyDbContext db) => db.Users.AsNoTracking().ToList().Select(x => x.ToFilteredUser()))
+    .WithDisplayName("GetUsers")
+    .WithDescription("Gets all users")
+    .RequireAuthorization();
+users.MapGet("/{id:guid}", (ConnectlyDbContext db, Guid id) => db.Users.AsNoTracking().FirstOrDefault(x => x.Id == id))
+    .WithDisplayName("GetUser")
+    .WithDescription("Gets a user by id")
+    .RequireAuthorization();
 users.MapGet("/profile", async ([FromServices] IExternalIdentityService identity, CancellationToken ct) =>
-{
-    var user = await identity.GetUserAsync(ct);
-    return user?.ToFilteredUser();
-})
+    {
+        var user = await identity.GetUserAsync(ct);
+        return user?.ToFilteredUser();
+    })
     .WithDisplayName("GetProfile")
     .WithDescription("Gets the current user's profile")
     .RequireAuthorization();
-users.MapPost("/", async ([FromBody] NewUser newUser,[FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
-{
-    var isUsernameTaken = await db.Users.AsNoTracking().AnyAsync(x => x.Username == newUser.Username, cancellationToken: ct);
-    var isExternalIdTaken = await db.Users.AsNoTracking().AnyAsync(x => x.ExternalId == identity.GetExternalUserId(), cancellationToken: ct);
-    if (isUsernameTaken || isExternalIdTaken)
-        return Results.BadRequest();
-    
-    var user = new User(newUser.Username, identity.GetExternalUserId());
-    await db.Users.AddAsync(user, cancellationToken: ct);
-    await db.SaveChangesAsync(cancellationToken: ct);
-    return Results.Created($"/api/users/{user.Id}", user.ToFilteredUser());
-})
+users.MapPost("/",
+        async ([FromBody] NewUser newUser, [FromServices] ConnectlyDbContext db,
+            [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
+        {
+            var isUsernameTaken = await db.Users.AsNoTracking()
+                .AnyAsync(x => x.Username == newUser.Username, cancellationToken: ct);
+            var isExternalIdTaken = await db.Users.AsNoTracking()
+                .AnyAsync(x => x.ExternalId == identity.GetExternalUserId(), cancellationToken: ct);
+            if (isUsernameTaken || isExternalIdTaken)
+                return Results.BadRequest();
+
+            var user = new User(newUser.Username, identity.GetExternalUserId());
+            await db.Users.AddAsync(user, cancellationToken: ct);
+            await db.SaveChangesAsync(cancellationToken: ct);
+            return Results.Created($"/api/users/{user.Id}", user.ToFilteredUser());
+        })
     .WithDisplayName("CreateUser")
     .WithDescription("Creates a new user")
     .RequireAuthorization(nameof(NoopAuthorizationRequirement));
+
+var followers = app.MapGroup("/api/followers").WithTags("Followers").RequireAuthorization();
+followers.MapGet("/",
+        async ([FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
+            CancellationToken ct) =>
+        {
+            var user = await identity.GetUserAsync(ct);
+            return await db.Followers
+                .AsNoTracking()
+                .Where(x => x.UserId == user.Id)
+                .Join(
+                    db.Users,
+                    f => f.FollowerId,
+                    u => u.Id,
+                    (f, u) => new DetailedFollower(f.UserId, f.FollowerId, u.Username))
+                .ToListAsync(ct);
+        })
+    .WithDisplayName("GetFollowers")
+    .WithDescription("Gets the current user's followers");
+followers.MapPost("/{id:guid}",
+    async () =>
+    {
+        
+    });
 
 app.Run();

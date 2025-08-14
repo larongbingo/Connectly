@@ -11,7 +11,7 @@ public class User
     
     public Guid Id { get; private set; }
     public string Username { get; set; }
-    public string ExternalId { get; set; }
+    public string ExternalId { get; private set; }
     
     public FilteredUser ToFilteredUser() => new(Id, Username);
 }

@@ -1,11 +1,13 @@
-﻿using Connectly.Application.Identity;
+﻿using Connectly.Application.Follower;
+using Connectly.Application.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace Connectly.Infrastructure.Data;
 
 public class ConnectlyDbContext : DbContext
 {
-    public DbSet<User> Users { get; set; }
+    public DbSet<User> Users { get; private set; }
+    public DbSet<Follower> Followers { get; private set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
