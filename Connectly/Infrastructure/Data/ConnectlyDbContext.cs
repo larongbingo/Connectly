@@ -1,5 +1,6 @@
 ﻿using Connectly.Application.Follower;
 using Connectly.Application.Identity;
+using Connectly.Application.Posts;
 
 using Microsoft.EntityFrameworkCore;
 
@@ -9,6 +10,7 @@ public class ConnectlyDbContext : DbContext
 {
     public DbSet<User> Users { get; private set; }
     public DbSet<Follower> Followers { get; private set; }
+    public DbSet<Post> Posts { get; private set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

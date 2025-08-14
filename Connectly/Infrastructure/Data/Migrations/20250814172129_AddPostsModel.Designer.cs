@@ -3,6 +3,7 @@ using System;
 using Connectly.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Connectly.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ConnectlyDbContext))]
-    partial class ConnectlyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250814172129_AddPostsModel")]
+    partial class AddPostsModel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.8");

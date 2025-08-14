@@ -2,6 +2,7 @@ using System.Security.Claims;
 
 using Connectly.Application.Follower;
 using Connectly.Application.Identity;
+using Connectly.Application.Posts;
 using Connectly.Authorization;
 using Connectly.Infrastructure.Data;
 
@@ -118,7 +119,6 @@ app.UseAuthorization();
 app.UseHttpsRedirection();
 
 RouteGroupBuilder users = app.MapGroup("/api/users").WithTags("Users");
-
 users.MapGet("/", (ConnectlyDbContext db) => db.Users.AsNoTracking().ToList().Select(x => x.ToFilteredUser()))
     .WithDisplayName("GetUsers")
     .WithDescription("Gets all users")
@@ -157,15 +157,15 @@ users.MapPost("/",
     .WithDescription("Creates a new user")
     .RequireAuthorization(nameof(NoopAuthorizationRequirement));
 
-RouteGroupBuilder followers = app.MapGroup("/api/followers").WithTags("Followers").RequireAuthorization();
-followers.MapGet("/",
+RouteGroupBuilder follows = app.MapGroup("/api/follows").WithTags("Follows").RequireAuthorization();
+follows.MapGet("/",
         async ([FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
             CancellationToken ct) =>
         {
             User? user = await identity.GetUserAsync(ct);
             return await db.Followers
                 .AsNoTracking()
-                .Where(x => x.UserId == user.Id)
+                .Where(x => x.FollowerId == user.Id)
                 .Join(
                     db.Users,
                     f => f.FollowerId,
@@ -173,49 +173,102 @@ followers.MapGet("/",
                     (f, u) => new DetailedFollower(f.FollowerId, u.Username))
                 .ToListAsync(ct);
         })
-    .WithDisplayName("GetFollowers")
-    .WithDescription("Gets the current user's followers");
-followers.MapPost("/{userId:guid}",
-    async (Guid userId, [FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
-        CancellationToken ct) =>
-    {
-        var user = await identity.GetUserAsync(ct);
-        var isUserToFollowExists = await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId, ct);
-        if (!isUserToFollowExists)
-            return Results.NotFound();
+    .WithDisplayName("GetFollowing")
+    .WithDescription("Gets the current user's followings");
+follows.MapPost("/{userId:guid}",
+        async (Guid userId, [FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
+            CancellationToken ct) =>
+        {
+            var user = await identity.GetUserAsync(ct);
+            var isUserToFollowExists = await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId, ct);
+            if (!isUserToFollowExists)
+                return Results.NotFound();
 
-        var isAlreadyFollowing =
-            await db.Followers.AsNoTracking().AnyAsync(x => x.UserId == user.Id && x.FollowerId == userId, ct);
-        if (isAlreadyFollowing)
-            return Results.BadRequest();
-        
-        var follower = new Follower(user.Id, userId);
-        await db.Followers.AddAsync(follower, ct);
-        await db.SaveChangesAsync(ct);
-        return Results.Created("/api/followers", follower.Id);
-    })
+            var isAlreadyFollowing =
+                await db.Followers.AsNoTracking().AnyAsync(x => x.UserId == user.Id && x.FollowerId == userId, ct);
+            if (isAlreadyFollowing)
+                return Results.BadRequest();
+
+            var follower = new Follower(user.Id, userId);
+            await db.Followers.AddAsync(follower, ct);
+            await db.SaveChangesAsync(ct);
+            return Results.Created("/api/followers", follower.Id);
+        })
     .WithDisplayName("FollowUser")
     .WithDescription("Follows a user");
-followers.MapDelete("/{userId:guid}", 
-    async (Guid userId, [FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
-        CancellationToken ct) =>
-    {
-        var user = await identity.GetUserAsync(ct);
-        var isUserToUnfollowExists = await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId, ct);
-        if (!isUserToUnfollowExists)
-            return Results.NotFound();
+follows.MapDelete("/{userId:guid}",
+        async (Guid userId, [FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
+            CancellationToken ct) =>
+        {
+            var user = await identity.GetUserAsync(ct);
+            var isUserToUnfollowExists = await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId, ct);
+            if (!isUserToUnfollowExists)
+                return Results.NotFound();
 
-        var isAlreadyFollowing =
-            await db.Followers.AsNoTracking().AnyAsync(x => x.UserId == user.Id && x.FollowerId == userId, ct);
-        if (!isAlreadyFollowing)
-            return Results.BadRequest();
-        
-        var follower = new Follower(user.Id, userId);
-        db.Followers.Remove(follower);
-        await db.SaveChangesAsync(ct);
-        return Results.NoContent();
-    })
+            var follow =
+                await db.Followers.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.UserId == user.Id && x.FollowerId == userId, ct);
+            if (follow is null)
+                return Results.BadRequest();
+
+            db.Followers.Remove(follow);
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        })
     .WithDisplayName("UnfollowUser")
     .WithDescription("Unfollows a user");
+
+var posts = app.MapGroup("/api/posts").WithTags("Posts").RequireAuthorization();
+posts.MapGet("/",
+        async ([FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
+            CancellationToken ct,
+            [FromQuery] string type = "all") =>
+        {
+            var user = await identity.GetUserAsync(ct);
+
+            type = type.ToLower();
+            return type switch
+            {
+                "user" => await db.Posts.AsNoTracking()
+                    .OrderByDescending(x => x.CreatedAt)
+                    .Where(x => x.UserId == user.Id)
+                    .ToListAsync(ct),
+                "following" => await db.Posts.AsNoTracking()
+                    .OrderByDescending(x => x.CreatedAt)
+                    .Join(db.Followers,
+                        p => p.UserId,
+                        f => f.FollowerId,
+                        (p, f) => new { p, f })
+                    .Where(x => x.f.FollowerId == user.Id)
+                    .Select(x => x.p)
+                    .ToListAsync(ct),
+                _ => await db.Posts.AsNoTracking().OrderByDescending(x => x.CreatedAt).ToListAsync(ct)
+            };
+        })
+    .WithDisplayName("GetPosts")
+    .WithDescription("Get all posts");
+posts.MapGet("/{postId:guid}",
+        async (Guid postId, [FromServices] ConnectlyDbContext db, CancellationToken ct) =>
+        {
+            var post = await db.Posts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == postId, ct);
+            return post is null ? Results.NotFound() : Results.Ok(post);
+        })
+    .WithDisplayName("GetPost")
+    .WithDescription("Get a post by id");
+posts.MapPost("/",
+        async ([FromBody] NewPost newPost, [FromServices] ConnectlyDbContext db,
+            [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
+        {
+            if (string.IsNullOrEmpty(newPost.Content))
+                return Results.BadRequest();
+
+            var user = await identity.GetUserAsync(ct);
+            var post = new Post(newPost.Content, user.Id);
+            await db.Posts.AddAsync(post, ct);
+            await db.SaveChangesAsync(ct);
+            return Results.Created($"/api/posts/{post.Id}", post.Id);
+        })
+    .WithDisplayName("CreatePost")
+    .WithDescription("Create a new post");
 
 app.Run();
