@@ -209,7 +209,7 @@ follows.MapDelete("/{userId:guid}",
                 return Results.NotFound();
 
             var follow =
-                await db.Followers.AsNoTracking()
+                await db.Followers
                     .FirstOrDefaultAsync(x => x.UserId == user.Id && x.FollowerId == userId, ct);
             if (follow is null)
                 return Results.BadRequest();
@@ -278,7 +278,7 @@ posts.MapDelete("/{postId:guid}",
             CancellationToken ct) =>
         {
             var user = await identity.GetUserAsync(ct);
-            var post = await db.Posts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == postId, ct);
+            var post = await db.Posts.FirstOrDefaultAsync(x => x.Id == postId, ct);
             if (post is null)
                 return Results.NotFound();
             if (post.UserId != user.Id)
