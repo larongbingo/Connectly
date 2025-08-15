@@ -184,6 +184,9 @@ follows.MapPost("/{userId:guid}",
             if (!isUserToFollowExists)
                 return Results.NotFound();
 
+            if (user.Id == userId)
+                return Results.BadRequest();
+            
             var isAlreadyFollowing =
                 await db.Followers.AsNoTracking().AnyAsync(x => x.UserId == user.Id && x.FollowerId == userId, ct);
             if (isAlreadyFollowing)
