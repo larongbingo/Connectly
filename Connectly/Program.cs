@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using System.Security.Claims;
 
 using Connectly.Application.Follower;
@@ -15,6 +16,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+
+using Npgsql;
 
 DotNetEnv.Env.TraversePath().Load();
 
@@ -86,10 +89,17 @@ builder.Services.AddOpenApi(options =>
     });
 });
 
+
+var connectlyMeter = new Meter("connectly");
 builder.Services.AddOpenTelemetry()
-    .WithTracing(configure => configure.UseGrafana())
-    .WithMetrics(configure => configure.UseGrafana());
-builder.Logging.AddOpenTelemetry(configure => configure.UseGrafana());
+    .WithTracing(configure => configure.UseGrafana().AddNpgsql())
+    .WithMetrics(configure => configure.UseGrafana().AddNpgsqlInstrumentation().AddMeter(connectlyMeter.Name));
+builder.Logging.AddOpenTelemetry(configure =>
+{
+    configure.UseGrafana();
+    configure.IncludeFormattedMessage = true;
+    configure.IncludeScopes = true;
+});
 builder.Services.AddHttpLogging(logging =>
 {
     logging.LoggingFields = HttpLoggingFields.RequestPath | HttpLoggingFields.RequestMethod |
@@ -144,6 +154,7 @@ users.MapGet("/profile", async ([FromServices] IExternalIdentityService identity
     .WithDisplayName("GetProfile")
     .WithDescription("Gets the current user's profile")
     .RequireAuthorization();
+var countNewUsers = connectlyMeter.CreateCounter<int>("new_users", "User", "Number of new users");
 users.MapPost("/",
         async ([FromBody] NewUser newUser, [FromServices] ConnectlyDbContext db,
             [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
@@ -160,6 +171,9 @@ users.MapPost("/",
             User user = new(newUser.Username, identity.GetExternalUserId());
             await db.Users.AddAsync(user, ct);
             await db.SaveChangesAsync(ct);
+            
+            countNewUsers.Add(1, [ new KeyValuePair<string, object?>("user_id", user.Id) ]);
+            
             return Results.Created($"/api/users/{user.Id}", user.ToFilteredUser());
         })
     .WithDisplayName("CreateUser")
@@ -267,6 +281,7 @@ posts.MapGet("/{postId:guid}",
         })
     .WithDisplayName("GetPost")
     .WithDescription("Get a post by id");
+var countNewPosts = connectlyMeter.CreateCounter<int>("new_posts", "Post", "Number of new posts");
 posts.MapPost("/",
         async ([FromBody] NewPost newPost, [FromServices] ConnectlyDbContext db,
             [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
@@ -278,10 +293,14 @@ posts.MapPost("/",
             var post = new Post(newPost.Content, user.Id);
             await db.Posts.AddAsync(post, ct);
             await db.SaveChangesAsync(ct);
+            
+            countNewPosts.Add(1, [ new KeyValuePair<string, object?>("user_id", user.Id) ]);
+            
             return Results.Created($"/api/posts/{post.Id}", post.Id);
         })
     .WithDisplayName("CreatePost")
     .WithDescription("Create a new post");
+var countDeletedPosts = connectlyMeter.CreateCounter<int>("deleted_posts", "Post", "Number of deleted posts");
 posts.MapDelete("/{postId:guid}",
         async (Guid postId, [FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
             CancellationToken ct) =>
@@ -295,6 +314,9 @@ posts.MapDelete("/{postId:guid}",
 
             db.Posts.Remove(post);
             await db.SaveChangesAsync(ct);
+            
+            countDeletedPosts.Add(1, [ new KeyValuePair<string, object?>("user_id", user.Id) ]);
+            
             return Results.NoContent();
         })
     .WithDisplayName("DeletePost")
