@@ -6,8 +6,11 @@ using Connectly.Application.Posts;
 using Connectly.Authorization;
 using Connectly.Infrastructure.Data;
 
+using Grafana.OpenTelemetry;
+
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -83,6 +86,16 @@ builder.Services.AddOpenApi(options =>
     });
 });
 
+builder.Services.AddOpenTelemetry()
+    .WithTracing(configure => configure.UseGrafana())
+    .WithMetrics(configure => configure.UseGrafana());
+builder.Logging.AddOpenTelemetry(configure => configure.UseGrafana());
+builder.Services.AddHttpLogging(logging =>
+{
+    logging.LoggingFields = HttpLoggingFields.RequestPath | HttpLoggingFields.RequestMethod |
+                            HttpLoggingFields.ResponseStatusCode;
+});
+
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -99,6 +112,8 @@ builder.Services.AddConnectlyAuthorization();
 
 
 WebApplication app = builder.Build();
+
+app.UseHttpLogging();
 
 app.MapOpenApi("/swagger/connectly.json");
 app.UseSwaggerUI(options =>
@@ -180,7 +195,7 @@ follows.MapPost("/{userId:guid}",
 
             if (user.Id == userId)
                 return Results.BadRequest();
-            
+
             var isAlreadyFollowing =
                 await db.Followers.AsNoTracking().AnyAsync(x => x.UserId == user.Id && x.FollowerId == userId, ct);
             if (isAlreadyFollowing)
