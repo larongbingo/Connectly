@@ -15,13 +15,12 @@ public class ConnectlyDbContext : DbContext
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         base.OnConfiguring(optionsBuilder);
-        optionsBuilder.UseSqlite("Data Source=connectly.db");
+        optionsBuilder.UseNpgsql(Environment.GetEnvironmentVariable("CONNECTLY_DB_CONNECTION_STRING"));
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ConnectlyDbContext).Assembly);
     }
 }

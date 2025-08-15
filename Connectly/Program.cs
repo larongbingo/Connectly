@@ -13,6 +13,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
+DotNetEnv.Env.TraversePath().Load();
+
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<ConnectlyDbContext>();
@@ -97,14 +99,6 @@ builder.Services.AddConnectlyAuthorization();
 
 
 WebApplication app = builder.Build();
-
-// The app mainly uses sqlite
-using (IServiceScope scope = app.Services.CreateScope())
-{
-    ConnectlyDbContext db = scope.ServiceProvider.GetRequiredService<ConnectlyDbContext>();
-    db.Database.Migrate();
-}
-
 
 app.MapOpenApi("/swagger/connectly.json");
 app.UseSwaggerUI(options =>
