@@ -1,5 +1,6 @@
 ﻿namespace Connectly.Application.Follower;
 
+#pragma warning disable CA1724
 public class Follower
 {
     public Follower(Guid userId, Guid followerId)
@@ -10,14 +11,14 @@ public class Follower
     }
 
     public Guid Id { get; private set; }
-    
+
     /// <summary>
-    /// ID of the user who is followed
+    ///     ID of the user who is followed
     /// </summary>
     public Guid UserId { get; private set; }
-    
+
     /// <summary>
-    /// ID of the user who is following
+    ///     ID of the user who is following
     /// </summary>
     public Guid FollowerId { get; private set; }
 }

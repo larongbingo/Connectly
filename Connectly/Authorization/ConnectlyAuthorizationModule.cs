@@ -12,7 +12,7 @@ public static class ConnectlyAuthorizationModule
                 policy => policy.Requirements.Add(new ConnectlyAuthorizationRequirement()));
             options.AddPolicy(nameof(NoopAuthorizationRequirement),
                 policy => policy.Requirements.Add(new NoopAuthorizationRequirement()));
-            options.DefaultPolicy = options.GetPolicy(nameof(ConnectlyAuthorizationRequirement));
+            options.DefaultPolicy = options.GetPolicy(nameof(ConnectlyAuthorizationRequirement))!;
         });
         services.AddScoped<IExternalIdentityService, ExternalIdentityService>();
         services.AddScoped<IAuthorizationHandler, ConnectlyAuthorizationHandler>();
