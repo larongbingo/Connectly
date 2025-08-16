@@ -9,7 +9,7 @@ public class Post
         CreatedAt = DateTime.UtcNow;
         Id = Guid.NewGuid();
     }
-    
+
     public Guid Id { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public string Content { get; private set; }

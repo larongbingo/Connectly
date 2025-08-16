@@ -1,4 +1,5 @@
 using System.Diagnostics.Metrics;
+using System.Globalization;
 using System.Security.Claims;
 
 using Connectly.Application.Follower;
@@ -6,6 +7,8 @@ using Connectly.Application.Identity;
 using Connectly.Application.Posts;
 using Connectly.Authorization;
 using Connectly.Infrastructure.Data;
+
+using DotNetEnv;
 
 using Grafana.OpenTelemetry;
 
@@ -19,7 +22,7 @@ using Microsoft.OpenApi.Models;
 
 using Npgsql;
 
-DotNetEnv.Env.TraversePath().Load();
+Env.TraversePath().Load();
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -27,7 +30,7 @@ builder.Services.AddDbContext<ConnectlyDbContext>();
 
 builder.Services.AddOpenApi(options =>
 {
-    options.AddDocumentTransformer(async (doc, ctx, ct) =>
+    options.AddDocumentTransformer((doc, ctx, ct) =>
     {
         doc.Info.Title = "Connectly API";
         doc.Info.Version = "Alpha";
@@ -48,16 +51,17 @@ builder.Services.AddOpenApi(options =>
                     Implicit = new OpenApiOAuthFlow
                     {
                         AuthorizationUrl =
-                            new Uri("https://ewan.au.auth0.com/authorize?audience=https://connectly-noobnoob"),
-                        TokenUrl = new Uri("https://ewan.au.auth0.com/oauth/token"),
+                            new Uri(Environment.GetEnvironmentVariable("AUTH0_AUTHORIZATION_URL")!),
+                        TokenUrl = new Uri(Environment.GetEnvironmentVariable("AUTH0_TOKEN_URL")!),
                         Scopes = new Dictionary<string, string> { ["openid"] = "OpenID" }
                     }
                 }
             }
         };
+        return Task.CompletedTask;
     });
 
-    options.AddOperationTransformer(async (op, ctx, ct) =>
+    options.AddOperationTransformer((op, ctx, ct) =>
     {
         bool hasAuthorizeAttribute =
             ctx.Description.ActionDescriptor.EndpointMetadata.OfType<AuthorizeAttribute>().Any();
@@ -75,22 +79,26 @@ builder.Services.AddOpenApi(options =>
                 }
             });
         }
+
+        return Task.CompletedTask;
     });
 
-    options.AddOperationTransformer(async (op, ctx, ct) =>
+    options.AddOperationTransformer((op, ctx, ct) =>
     {
         string? displayName = ctx.Description.ActionDescriptor.DisplayName;
         if (string.IsNullOrEmpty(displayName))
         {
-            return;
+            return Task.CompletedTask;
         }
 
         op.Summary = displayName;
+
+        return Task.CompletedTask;
     });
 });
 
 
-var connectlyMeter = new Meter("connectly");
+using Meter connectlyMeter = new("connectly");
 builder.Services.AddOpenTelemetry()
     .WithTracing(configure => configure.UseGrafana().AddNpgsql())
     .WithMetrics(configure => configure.UseGrafana().AddNpgsqlInstrumentation().AddMeter(connectlyMeter.Name));
@@ -100,11 +108,9 @@ builder.Logging.AddOpenTelemetry(configure =>
     configure.IncludeFormattedMessage = true;
     configure.IncludeScopes = true;
 });
-builder.Services.AddHttpLogging(logging =>
-{
-    logging.LoggingFields = HttpLoggingFields.RequestPath | HttpLoggingFields.RequestMethod |
-                            HttpLoggingFields.ResponseStatusCode;
-});
+builder.Services.AddHttpLogging(logging => logging.LoggingFields =
+    HttpLoggingFields.RequestPath | HttpLoggingFields.RequestMethod |
+    HttpLoggingFields.ResponseStatusCode);
 
 builder.Services.AddAuthentication(options =>
     {
@@ -138,7 +144,7 @@ app.UseAuthorization();
 app.UseHttpsRedirection();
 
 RouteGroupBuilder users = app.MapGroup("/api/users").WithTags("Users");
-users.MapGet("/", (ConnectlyDbContext db) => db.Users.AsNoTracking().ToList().Select(x => x.ToFilteredUser()))
+users.MapGet("/", (ConnectlyDbContext db) => db.Users.AsNoTracking().AsEnumerable().Select(x => x.ToFilteredUser()))
     .WithDisplayName("GetUsers")
     .WithDescription("Gets all users")
     .RequireAuthorization();
@@ -154,7 +160,7 @@ users.MapGet("/profile", async ([FromServices] IExternalIdentityService identity
     .WithDisplayName("GetProfile")
     .WithDescription("Gets the current user's profile")
     .RequireAuthorization();
-var countNewUsers = connectlyMeter.CreateCounter<int>("new_users", "User", "Number of new users");
+Counter<int> countNewUsers = connectlyMeter.CreateCounter<int>("new_users", "User", "Number of new users");
 users.MapPost("/",
         async ([FromBody] NewUser newUser, [FromServices] ConnectlyDbContext db,
             [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
@@ -168,12 +174,12 @@ users.MapPost("/",
                 return Results.BadRequest();
             }
 
-            User user = new(newUser.Username, identity.GetExternalUserId());
+            User user = new(newUser.Username, identity.GetExternalUserId()!);
             await db.Users.AddAsync(user, ct);
             await db.SaveChangesAsync(ct);
-            
-            countNewUsers.Add(1, [ new KeyValuePair<string, object?>("user_id", user.Id) ]);
-            
+
+            countNewUsers.Add(1, new KeyValuePair<string, object?>("user_id", user.Id));
+
             return Results.Created($"/api/users/{user.Id}", user.ToFilteredUser());
         })
     .WithDisplayName("CreateUser")
@@ -186,7 +192,12 @@ follows.MapGet("/",
             CancellationToken ct) =>
         {
             User? user = await identity.GetUserAsync(ct);
-            return await db.Followers
+            if (user is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            List<DetailedFollower> results = await db.Followers
                 .AsNoTracking()
                 .Where(x => x.FollowerId == user.Id)
                 .Join(
@@ -195,6 +206,8 @@ follows.MapGet("/",
                     u => u.Id,
                     (f, u) => new DetailedFollower(f.FollowerId, u.Username))
                 .ToListAsync(ct);
+
+            return Results.Ok(results);
         })
     .WithDisplayName("GetFollowing")
     .WithDescription("Gets the current user's followings");
@@ -202,20 +215,31 @@ follows.MapPost("/{userId:guid}",
         async (Guid userId, [FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
             CancellationToken ct) =>
         {
-            var user = await identity.GetUserAsync(ct);
-            var isUserToFollowExists = await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId, ct);
+            User? user = await identity.GetUserAsync(ct);
+            if (user is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            bool isUserToFollowExists = await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId, ct);
             if (!isUserToFollowExists)
+            {
                 return Results.NotFound();
+            }
 
             if (user.Id == userId)
+            {
                 return Results.BadRequest();
+            }
 
-            var isAlreadyFollowing =
+            bool isAlreadyFollowing =
                 await db.Followers.AsNoTracking().AnyAsync(x => x.UserId == user.Id && x.FollowerId == userId, ct);
             if (isAlreadyFollowing)
+            {
                 return Results.BadRequest();
+            }
 
-            var follower = new Follower(user.Id, userId);
+            Follower follower = new(user.Id, userId);
             await db.Followers.AddAsync(follower, ct);
             await db.SaveChangesAsync(ct);
             return Results.Created("/api/followers", follower.Id);
@@ -226,16 +250,25 @@ follows.MapDelete("/{userId:guid}",
         async (Guid userId, [FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
             CancellationToken ct) =>
         {
-            var user = await identity.GetUserAsync(ct);
-            var isUserToUnfollowExists = await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId, ct);
-            if (!isUserToUnfollowExists)
-                return Results.NotFound();
+            User? user = await identity.GetUserAsync(ct);
+            if (user is null)
+            {
+                return Results.Unauthorized();
+            }
 
-            var follow =
+            bool isUserToUnfollowExists = await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId, ct);
+            if (!isUserToUnfollowExists)
+            {
+                return Results.NotFound();
+            }
+
+            Follower? follow =
                 await db.Followers
                     .FirstOrDefaultAsync(x => x.UserId == user.Id && x.FollowerId == userId, ct);
             if (follow is null)
+            {
                 return Results.BadRequest();
+            }
 
             db.Followers.Remove(follow);
             await db.SaveChangesAsync(ct);
@@ -244,22 +277,25 @@ follows.MapDelete("/{userId:guid}",
     .WithDisplayName("UnfollowUser")
     .WithDescription("Unfollows a user");
 
-var posts = app.MapGroup("/api/posts").WithTags("Posts").RequireAuthorization();
+RouteGroupBuilder posts = app.MapGroup("/api/posts").WithTags("Posts").RequireAuthorization();
 posts.MapGet("/",
         async ([FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
-            CancellationToken ct,
-            [FromQuery] string type = "all") =>
+            CancellationToken ct, [FromQuery] string type = "all") =>
         {
-            var user = await identity.GetUserAsync(ct);
-
-            type = type.ToLower();
-            return type switch
+            User? user = await identity.GetUserAsync(ct);
+            if (user is null)
             {
-                "user" => await db.Posts.AsNoTracking()
+                return Results.Unauthorized();
+            }
+
+            type = type.ToUpper(CultureInfo.InvariantCulture);
+            List<Post> results = type switch
+            {
+                "USER" => await db.Posts.AsNoTracking()
                     .OrderByDescending(x => x.CreatedAt)
                     .Where(x => x.UserId == user.Id)
                     .ToListAsync(ct),
-                "following" => await db.Posts.AsNoTracking()
+                "FOLLOWING" => await db.Posts.AsNoTracking()
                     .OrderByDescending(x => x.CreatedAt)
                     .Join(db.Followers,
                         p => p.UserId,
@@ -270,56 +306,74 @@ posts.MapGet("/",
                     .ToListAsync(ct),
                 _ => await db.Posts.AsNoTracking().OrderByDescending(x => x.CreatedAt).ToListAsync(ct)
             };
+            return Results.Ok(results);
         })
     .WithDisplayName("GetPosts")
     .WithDescription("Get all posts");
 posts.MapGet("/{postId:guid}",
         async (Guid postId, [FromServices] ConnectlyDbContext db, CancellationToken ct) =>
         {
-            var post = await db.Posts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == postId, ct);
+            Post? post = await db.Posts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == postId, ct);
             return post is null ? Results.NotFound() : Results.Ok(post);
         })
     .WithDisplayName("GetPost")
     .WithDescription("Get a post by id");
-var countNewPosts = connectlyMeter.CreateCounter<int>("new_posts", "Post", "Number of new posts");
+Counter<int> countNewPosts = connectlyMeter.CreateCounter<int>("new_posts", "Post", "Number of new posts");
 posts.MapPost("/",
         async ([FromBody] NewPost newPost, [FromServices] ConnectlyDbContext db,
             [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(newPost.Content))
+            {
                 return Results.BadRequest();
+            }
 
-            var user = await identity.GetUserAsync(ct);
-            var post = new Post(newPost.Content, user.Id);
+            User? user = await identity.GetUserAsync(ct);
+            if (user is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            Post post = new(newPost.Content, user.Id);
             await db.Posts.AddAsync(post, ct);
             await db.SaveChangesAsync(ct);
-            
-            countNewPosts.Add(1, [ new KeyValuePair<string, object?>("user_id", user.Id) ]);
-            
+
+            countNewPosts.Add(1, new KeyValuePair<string, object?>("user_id", user.Id));
+
             return Results.Created($"/api/posts/{post.Id}", post.Id);
         })
     .WithDisplayName("CreatePost")
     .WithDescription("Create a new post");
-var countDeletedPosts = connectlyMeter.CreateCounter<int>("deleted_posts", "Post", "Number of deleted posts");
+Counter<int> countDeletedPosts = connectlyMeter.CreateCounter<int>("deleted_posts", "Post", "Number of deleted posts");
 posts.MapDelete("/{postId:guid}",
         async (Guid postId, [FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
             CancellationToken ct) =>
         {
-            var user = await identity.GetUserAsync(ct);
-            var post = await db.Posts.FirstOrDefaultAsync(x => x.Id == postId, ct);
+            User? user = await identity.GetUserAsync(ct);
+            if (user is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            Post? post = await db.Posts.FirstOrDefaultAsync(x => x.Id == postId, ct);
             if (post is null)
+            {
                 return Results.NotFound();
+            }
+
             if (post.UserId != user.Id)
+            {
                 return Results.BadRequest();
+            }
 
             db.Posts.Remove(post);
             await db.SaveChangesAsync(ct);
-            
-            countDeletedPosts.Add(1, [ new KeyValuePair<string, object?>("user_id", user.Id) ]);
-            
+
+            countDeletedPosts.Add(1, new KeyValuePair<string, object?>("user_id", user.Id));
+
             return Results.NoContent();
         })
     .WithDisplayName("DeletePost")
     .WithDescription("Delete a post");
 
-app.Run();
+await app.RunAsync();

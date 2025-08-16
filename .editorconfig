@@ -376,3 +376,7 @@ dotnet_naming_style.s_camelcase.required_suffix =
 dotnet_naming_style.s_camelcase.word_separator =
 dotnet_naming_style.s_camelcase.capitalization = camel_case
 
+[*.{cs,vb}]
+dotnet_diagnostic.CA2007.severity = none # This project can skip on using ConfigureAwait()
+dotnet_diagnostic.CA1515.severity = none # EF Core Tool needs to access database classes
+dotnet_diagnostic.CA1062.severity = none # External Libs dependencies
