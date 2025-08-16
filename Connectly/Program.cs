@@ -51,8 +51,8 @@ builder.Services.AddOpenApi(options =>
                     Implicit = new OpenApiOAuthFlow
                     {
                         AuthorizationUrl =
-                            new Uri(Environment.GetEnvironmentVariable("AUTH0_AUTHORIZATION_URL")!),
-                        TokenUrl = new Uri(Environment.GetEnvironmentVariable("AUTH0_TOKEN_URL")!),
+                            new Uri("https://ewan.au.auth0.com/authorize?audience=https://connectly-noobnoob"),
+                        TokenUrl = new Uri("https://ewan.au.auth0.com/oauth/token"),
                         Scopes = new Dictionary<string, string> { ["openid"] = "OpenID" }
                     }
                 }
