@@ -10,8 +10,6 @@ using Connectly.Infrastructure.Data;
 
 using DotNetEnv;
 
-using Grafana.OpenTelemetry;
-
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpLogging;
@@ -99,15 +97,6 @@ builder.Services.AddOpenApi(options =>
 
 
 using Meter connectlyMeter = new("connectly");
-builder.Services.AddOpenTelemetry()
-    .WithTracing(configure => configure.UseGrafana().AddNpgsql())
-    .WithMetrics(configure => configure.UseGrafana().AddNpgsqlInstrumentation().AddMeter(connectlyMeter.Name));
-builder.Logging.AddOpenTelemetry(configure =>
-{
-    configure.UseGrafana();
-    configure.IncludeFormattedMessage = true;
-    configure.IncludeScopes = true;
-});
 builder.Services.AddHttpLogging(logging => logging.LoggingFields =
     HttpLoggingFields.RequestPath | HttpLoggingFields.RequestMethod |
     HttpLoggingFields.ResponseStatusCode);
