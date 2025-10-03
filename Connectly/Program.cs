@@ -95,8 +95,6 @@ builder.Services.AddOpenApi(options =>
     });
 });
 
-
-using Meter connectlyMeter = new("connectly");
 builder.Services.AddHttpLogging(logging => logging.LoggingFields =
     HttpLoggingFields.RequestPath | HttpLoggingFields.RequestMethod |
     HttpLoggingFields.ResponseStatusCode);
@@ -149,7 +147,6 @@ users.MapGet("/profile", async ([FromServices] IExternalIdentityService identity
     .WithDisplayName("GetProfile")
     .WithDescription("Gets the current user's profile")
     .RequireAuthorization();
-Counter<int> countNewUsers = connectlyMeter.CreateCounter<int>("new_users", "User", "Number of new users");
 users.MapPost("/",
         async ([FromBody] NewUser newUser, [FromServices] ConnectlyDbContext db,
             [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
@@ -167,7 +164,7 @@ users.MapPost("/",
             await db.Users.AddAsync(user, ct);
             await db.SaveChangesAsync(ct);
 
-            countNewUsers.Add(1, new KeyValuePair<string, object?>("user_id", user.Id));
+            NewRelic.Api.Agent.NewRelic.RecordMetric("Custom/CreateUser", 1);
 
             return Results.Created($"/api/users/{user.Id}", user.ToFilteredUser());
         })
@@ -307,7 +304,6 @@ posts.MapGet("/{postId:guid}",
         })
     .WithDisplayName("GetPost")
     .WithDescription("Get a post by id");
-Counter<int> countNewPosts = connectlyMeter.CreateCounter<int>("new_posts", "Post", "Number of new posts");
 posts.MapPost("/",
         async ([FromBody] NewPost newPost, [FromServices] ConnectlyDbContext db,
             [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
@@ -327,13 +323,12 @@ posts.MapPost("/",
             await db.Posts.AddAsync(post, ct);
             await db.SaveChangesAsync(ct);
 
-            countNewPosts.Add(1, new KeyValuePair<string, object?>("user_id", user.Id));
+            NewRelic.Api.Agent.NewRelic.RecordMetric("Custom/CreatePost", 1);
 
             return Results.Created($"/api/posts/{post.Id}", post.Id);
         })
     .WithDisplayName("CreatePost")
     .WithDescription("Create a new post");
-Counter<int> countDeletedPosts = connectlyMeter.CreateCounter<int>("deleted_posts", "Post", "Number of deleted posts");
 posts.MapDelete("/{postId:guid}",
         async (Guid postId, [FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
             CancellationToken ct) =>
@@ -358,7 +353,7 @@ posts.MapDelete("/{postId:guid}",
             db.Posts.Remove(post);
             await db.SaveChangesAsync(ct);
 
-            countDeletedPosts.Add(1, new KeyValuePair<string, object?>("user_id", user.Id));
+            NewRelic.Api.Agent.NewRelic.RecordMetric("Custom/DeletePost", 1);
 
             return Results.NoContent();
         })
