@@ -2,6 +2,7 @@ using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Security.Claims;
 
+using Connectly;
 using Connectly.Application.Follower;
 using Connectly.Application.Identity;
 using Connectly.Application.Posts;
@@ -155,7 +156,7 @@ users.MapPost("/",
                 .AnyAsync(x => x.Username == newUser.Username, ct);
             bool isExternalIdTaken = await db.Users.AsNoTracking()
                 .AnyAsync(x => x.ExternalId == identity.GetExternalUserId(), ct);
-            if (isUsernameTaken || isExternalIdTaken)
+            if (isUsernameTaken || isExternalIdTaken || !newUser.Username.ContainsOnlyValidCharacters())
             {
                 return Results.BadRequest();
             }
@@ -308,7 +309,7 @@ posts.MapPost("/",
         async ([FromBody] NewPost newPost, [FromServices] ConnectlyDbContext db,
             [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
         {
-            if (string.IsNullOrEmpty(newPost.Content))
+            if (string.IsNullOrEmpty(newPost.Content) || !newPost.Content.ContainsOnlyValidCharacters())
             {
                 return Results.BadRequest();
             }
