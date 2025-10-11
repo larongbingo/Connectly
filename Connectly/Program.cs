@@ -127,6 +127,15 @@ builder.Services.AddRateLimiter(options =>
         limiter.QueueLimit = 0;
     });
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, token) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        NewRelic.Api.Agent.NewRelic.RecordCustomEvent("Custom/RateLimiterMaxedOut", [
+            new("ExternalId", context.HttpContext.User.GetExternalId() ?? string.Empty),
+        ]);
+        NewRelic.Api.Agent.NewRelic.RecordMetric("Custom/RateLimiterMaxedOut", 1);
+        return ValueTask.CompletedTask;
+    };
 });
 
 WebApplication app = builder.Build();
