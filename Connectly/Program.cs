@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Security.Claims;
@@ -156,8 +157,18 @@ users.MapPost("/",
                 .AnyAsync(x => x.Username == newUser.Username, ct);
             bool isExternalIdTaken = await db.Users.AsNoTracking()
                 .AnyAsync(x => x.ExternalId == identity.GetExternalUserId(), ct);
-            if (isUsernameTaken || isExternalIdTaken || !newUser.Username.ContainsPrintableValidCharacters())
+            if (isUsernameTaken || isExternalIdTaken)
             {
+                return Results.BadRequest();
+            }
+            
+            if (!newUser.Username.ContainsPrintableValidCharacters())
+            {
+                NewRelic.Api.Agent.NewRelic.RecordCustomEvent("Custom/CreateUserInvalidCharacters", [
+                    new("ExternalId", identity.GetExternalUserId() ?? string.Empty),
+                    new ("Username", newUser.Username)
+                ]);
+                NewRelic.Api.Agent.NewRelic.RecordMetric("Custom/CreateUserInvalidCharacters", 1);
                 return Results.BadRequest();
             }
 
@@ -309,7 +320,7 @@ posts.MapPost("/",
         async ([FromBody] NewPost newPost, [FromServices] ConnectlyDbContext db,
             [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
         {
-            if (string.IsNullOrEmpty(newPost.Content) || !newPost.Content.ContainsPrintableValidCharacters())
+            if (string.IsNullOrEmpty(newPost.Content))
             {
                 return Results.BadRequest();
             }
@@ -318,6 +329,16 @@ posts.MapPost("/",
             if (user is null)
             {
                 return Results.Unauthorized();
+            }
+            
+            if (!newPost.Content.ContainsPrintableValidCharacters())
+            {
+                NewRelic.Api.Agent.NewRelic.RecordCustomEvent("Custom/CreatePostInvalidCharacters", [
+                    new("UserId", user.Id),
+                    new ("Content", newPost.Content)
+                ]);
+                NewRelic.Api.Agent.NewRelic.RecordMetric("Custom/CreatePostInvalidCharacters", 1);
+                return Results.BadRequest();
             }
 
             Post post = new(newPost.Content, user.Id);
