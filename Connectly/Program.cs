@@ -156,7 +156,7 @@ users.MapPost("/",
                 .AnyAsync(x => x.Username == newUser.Username, ct);
             bool isExternalIdTaken = await db.Users.AsNoTracking()
                 .AnyAsync(x => x.ExternalId == identity.GetExternalUserId(), ct);
-            if (isUsernameTaken || isExternalIdTaken || !newUser.Username.ContainsOnlyValidCharacters())
+            if (isUsernameTaken || isExternalIdTaken || !newUser.Username.ContainsPrintableValidCharacters())
             {
                 return Results.BadRequest();
             }
@@ -309,7 +309,7 @@ posts.MapPost("/",
         async ([FromBody] NewPost newPost, [FromServices] ConnectlyDbContext db,
             [FromServices] IExternalIdentityService identity, CancellationToken ct) =>
         {
-            if (string.IsNullOrEmpty(newPost.Content) || !newPost.Content.ContainsOnlyValidCharacters())
+            if (string.IsNullOrEmpty(newPost.Content) || !newPost.Content.ContainsPrintableValidCharacters())
             {
                 return Results.BadRequest();
             }
