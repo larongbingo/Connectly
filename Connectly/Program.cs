@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -115,8 +116,22 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddConnectlyAuthorization();
 
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddSlidingWindowLimiter("default", limiter =>
+    {
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.AutoReplenishment = true;
+        limiter.SegmentsPerWindow = 6;
+        limiter.PermitLimit = 30;
+        limiter.QueueLimit = 0;
+    });
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
 
 WebApplication app = builder.Build();
+
+app.UseRateLimiter();
 
 app.UseHttpLogging();
 
@@ -132,7 +147,7 @@ app.UseAuthorization();
 
 app.UseHttpsRedirection();
 
-RouteGroupBuilder users = app.MapGroup("/api/users").WithTags("Users");
+RouteGroupBuilder users = app.MapGroup("/api/users").WithTags("Users").RequireRateLimiting("default");
 users.MapGet("/", (ConnectlyDbContext db) => db.Users.AsNoTracking().AsEnumerable().Select(x => x.ToFilteredUser()))
     .WithDisplayName("GetUsers")
     .WithDescription("Gets all users")
@@ -184,7 +199,7 @@ users.MapPost("/",
     .WithDescription("Creates a new user")
     .RequireAuthorization(nameof(NoopAuthorizationRequirement));
 
-RouteGroupBuilder follows = app.MapGroup("/api/follows").WithTags("Follows").RequireAuthorization();
+RouteGroupBuilder follows = app.MapGroup("/api/follows").WithTags("Follows").RequireAuthorization().RequireRateLimiting("default");
 follows.MapGet("/",
         async ([FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
             CancellationToken ct) =>
@@ -275,7 +290,7 @@ follows.MapDelete("/{userId:guid}",
     .WithDisplayName("UnfollowUser")
     .WithDescription("Unfollows a user");
 
-RouteGroupBuilder posts = app.MapGroup("/api/posts").WithTags("Posts").RequireAuthorization();
+RouteGroupBuilder posts = app.MapGroup("/api/posts").WithTags("Posts").RequireAuthorization().RequireRateLimiting("default");
 posts.MapGet("/",
         async ([FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
             CancellationToken ct, [FromQuery] string type = "all") =>
