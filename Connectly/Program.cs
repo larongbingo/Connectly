@@ -51,10 +51,12 @@ builder.Services.AddOpenApi(options =>
                 {
                     Implicit = new OpenApiOAuthFlow
                     {
+#pragma warning disable S1075
                         AuthorizationUrl =
                             new Uri("https://ewan.au.auth0.com/authorize?audience=https://connectly-noobnoob"),
                         TokenUrl = new Uri("https://ewan.au.auth0.com/oauth/token"),
                         Scopes = new Dictionary<string, string> { ["openid"] = "OpenID" }
+#pragma warning restore S1075
                     }
                 }
             }

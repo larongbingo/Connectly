@@ -8,10 +8,11 @@ namespace Connectly.Infrastructure.Data;
 
 public class ConnectlyDbContext : DbContext
 {
+#pragma warning disable S1144
     public DbSet<User> Users { get; private set; }
     public DbSet<Follower> Followers { get; private set; }
     public DbSet<Post> Posts { get; private set; }
-
+#pragma warning restore S1144
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         base.OnConfiguring(optionsBuilder);
