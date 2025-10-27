@@ -188,12 +188,12 @@ users.MapPost("/",
             {
                 return Results.BadRequest();
             }
-            
+
             if (!newUser.Username.ContainsPrintableValidCharacters())
             {
                 NewRelic.Api.Agent.NewRelic.RecordCustomEvent("Custom/CreateUserInvalidCharacters", [
                     new("ExternalId", identity.GetExternalUserId() ?? string.Empty),
-                    new ("Username", newUser.Username)
+                    new("Username", newUser.Username)
                 ]);
                 NewRelic.Api.Agent.NewRelic.RecordMetric("Custom/CreateUserInvalidCharacters", 1);
                 return Results.BadRequest();
@@ -211,7 +211,8 @@ users.MapPost("/",
     .WithDescription("Creates a new user")
     .RequireAuthorization(nameof(NoopAuthorizationRequirement));
 
-RouteGroupBuilder follows = app.MapGroup("/api/follows").WithTags("Follows").RequireAuthorization().RequireRateLimiting("default");
+RouteGroupBuilder follows = app.MapGroup("/api/follows").WithTags("Follows").RequireAuthorization()
+    .RequireRateLimiting("default");
 follows.MapGet("/",
         async ([FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
             CancellationToken ct) =>
@@ -302,7 +303,8 @@ follows.MapDelete("/{userId:guid}",
     .WithDisplayName("UnfollowUser")
     .WithDescription("Unfollows a user");
 
-RouteGroupBuilder posts = app.MapGroup("/api/posts").WithTags("Posts").RequireAuthorization().RequireRateLimiting("default");
+RouteGroupBuilder posts = app.MapGroup("/api/posts").WithTags("Posts").RequireAuthorization()
+    .RequireRateLimiting("default");
 posts.MapGet("/",
         async ([FromServices] ConnectlyDbContext db, [FromServices] IExternalIdentityService identity,
             CancellationToken ct, [FromQuery] string type = "all") =>
@@ -357,12 +359,12 @@ posts.MapPost("/",
             {
                 return Results.Unauthorized();
             }
-            
+
             if (!newPost.Content.ContainsPrintableValidCharacters())
             {
                 NewRelic.Api.Agent.NewRelic.RecordCustomEvent("Custom/CreatePostInvalidCharacters", [
                     new("UserId", user.Id),
-                    new ("Content", newPost.Content)
+                    new("Content", newPost.Content)
                 ]);
                 NewRelic.Api.Agent.NewRelic.RecordMetric("Custom/CreatePostInvalidCharacters", 1);
                 return Results.BadRequest();
