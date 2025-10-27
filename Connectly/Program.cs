@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Claims;
+using System.Threading.RateLimiting;
 
 using Connectly;
 using Connectly.Application.Follower;
@@ -116,14 +117,18 @@ builder.Services.AddConnectlyAuthorization();
 
 builder.Services.AddRateLimiter(options =>
 {
-    options.AddSlidingWindowLimiter("default", limiter =>
-    {
-        limiter.Window = TimeSpan.FromMinutes(1);
-        limiter.AutoReplenishment = true;
-        limiter.SegmentsPerWindow = 6;
-        limiter.PermitLimit = 30;
-        limiter.QueueLimit = 0;
-    });
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.User.GetExternalId() ?? context.Request.Headers.Host.ToString(),
+            factory: partition => new SlidingWindowRateLimiterOptions()
+            {
+                Window = TimeSpan.FromMinutes(1),
+                AutoReplenishment = true,
+                PermitLimit = 30,
+                QueueLimit = 0,
+                SegmentsPerWindow = 6,
+            })
+    );
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.OnRejected = (context, token) =>
     {
