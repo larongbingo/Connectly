@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Security.Claims;
 
@@ -20,8 +18,6 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-
-using Npgsql;
 
 Env.TraversePath().Load();
 
